@@ -1,0 +1,62 @@
+# strm-builder
+
+Mirrors the media files on one or more WebDAV or HTTP(S) directory-index servers
+into a tree of `.strm` files, each containing the source file's HTTP(S) URL. Pair
+it with [plex-strm-assistant](https://github.com/liveinaus/plex-strm-assistant)
+(Plex), or point Jellyfin / Emby / Kodi straight at the output — no FUSE mount in
+the playback path.
+
+Single static Go binary, stdlib only, built with [ko](https://ko.build) (no
+Dockerfile). Concurrent crawl — WebDAV PROPFIND or HTML autoindex, auto-detected
+per source — with idempotent writes and optional pruning.
+
+## Sources
+
+Point each source at a normal `http://` or `https://` URL. It's probed once at
+its root — a WebDAV `PROPFIND` if the server supports it, otherwise its HTML
+directory index (autoindex) is parsed — so WebDAV and plain file-listing servers
+both work with no extra configuration.
+
+## Layout
+
+Output is `<root>/<host>/<path-from-server-root>/<name>.strm`. A source URL may
+include a subfolder — only that subfolder is crawled, but the path is still
+mirrored from the server root:
+
+```
+-webdav-url https://host/movies
+  ->  <root>/host/movies/Title (2024)/Title (2024).strm
+```
+
+## Configuration
+
+Each flag has a matching environment variable:
+
+| Flag / Env | Default | Description |
+|------------|---------|-------------|
+| `-webdav-url` / `WEBDAV_URLS` | — (required) | Source URL(s), WebDAV or HTTP directory-index (auto-detected); flag repeatable, env comma/space-separated, positional args also accepted |
+| `-root` / `ROOT_FOLDER` | `/strm` | Where the `.strm` trees are written |
+| `WEBDAV_USERNAME` / `WEBDAV_PASSWORD` | — | Basic auth, applied to URLs without an embedded `user:pass@` |
+| `-embed-creds` / `EMBED_CREDENTIALS` | `false` | Embed `user:pass@` in the `.strm` URLs |
+| `-concurrency` / `CONCURRENCY` | `8` | Parallel PROPFINDs — lower it for rate-limited servers |
+| `-ext` / `MEDIA_EXTENSIONS` | common video set | Comma-separated extensions, or `*` for all |
+| `-prune` / `PRUNE` | `false` | Delete `.strm` whose source no longer exists |
+| `-dry-run` / `DRY_RUN` | `false` | Log without writing |
+| `-timeout` / `TIMEOUT` | `30s` | Per-request timeout |
+
+## Build
+
+```bash
+KO_DOCKER_REPO=ghcr.io/kanya-approve/strm-builder ko build ./cmd/strm-builder
+```
+
+Pushes to `main` build a `:main` / `:sha-<sha>` snapshot; tagging `vX.Y.Z` cuts a
+signed multi-arch release.
+
+## Run
+
+```bash
+WEBDAV_USERNAME=user WEBDAV_PASSWORD=pass \
+  ./strm-builder -webdav-url https://host/movies -webdav-url https://host/tvs \
+  -root ./out -concurrency 2
+```
