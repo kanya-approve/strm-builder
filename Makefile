@@ -1,8 +1,9 @@
 .PHONY: build test vet image run
 
-# Overridable via environment or command line. Program vars are empty so the
-# binary's own defaults apply unless set (e.g. make run SOURCE_URLS=...).
-KO_DOCKER_REPO ?= ko.local/strm-builder
+KO_DOCKER_REPO ?= ghcr.io/kanya-approve/strm-builder
+TAG ?= latest
+# Program vars are empty so the binary's own defaults apply unless overridden
+# (e.g. make run SOURCE_URLS=https://user:pass@host/movies PRUNE=true).
 SOURCE_URLS ?=
 ROOT_FOLDER ?=
 MEDIA_EXTENSIONS ?=
@@ -23,10 +24,10 @@ vet:
 	go vet ./...
 
 image:
-	ko build --local --bare ./cmd/strm-builder
+	ko build --bare ./cmd/strm-builder
 
-run: image
+run:
 	docker run --rm \
 		-e SOURCE_URLS -e ROOT_FOLDER -e MEDIA_EXTENSIONS -e CONCURRENCY \
 		-e EMBED_CREDENTIALS -e PRUNE -e DRY_RUN -e TIMEOUT \
-		$(KO_DOCKER_REPO) $(ARGS)
+		$(KO_DOCKER_REPO):$(TAG) $(ARGS)
