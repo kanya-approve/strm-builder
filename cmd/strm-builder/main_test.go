@@ -26,7 +26,7 @@ func respXML(p string, isDir bool) string {
 		rt + `</d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`
 }
 
-func mockWebDAV() *httptest.Server {
+func webdavHandler() http.Handler {
 	tree := map[string][]child{
 		"/movies/": {
 			{"The Matrix (1999)/", true},
@@ -36,7 +36,7 @@ func mockWebDAV() *httptest.Server {
 			{"The Matrix (1999).mkv", false},
 		},
 	}
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "PROPFIND" {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -60,8 +60,10 @@ func mockWebDAV() *httptest.Server {
 		w.Header().Set("Content-Type", "application/xml")
 		w.WriteHeader(http.StatusMultiStatus)
 		w.Write([]byte(sb.String()))
-	}))
+	})
 }
+
+func mockWebDAV() *httptest.Server { return httptest.NewServer(webdavHandler()) }
 
 func TestBuildSubfolder(t *testing.T) {
 	srv := mockWebDAV()
@@ -105,7 +107,7 @@ func indexHTML(kids []child) string {
 	return sb.String()
 }
 
-func mockHTTPIndex() *httptest.Server {
+func httpIndexHandler() http.Handler {
 	pages := map[string][]child{
 		"/movies/": {
 			{"The Matrix (1999)/", true},
@@ -115,7 +117,7 @@ func mockHTTPIndex() *httptest.Server {
 			{"The Matrix (1999).mkv", false},
 		},
 	}
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet { // 405 on PROPFIND drives the probe to the HTML index
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -131,8 +133,10 @@ func mockHTTPIndex() *httptest.Server {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(indexHTML(kids)))
-	}))
+	})
 }
+
+func mockHTTPIndex() *httptest.Server { return httptest.NewServer(httpIndexHandler()) }
 
 func TestBuildHTTPIndex(t *testing.T) {
 	srv := mockHTTPIndex()
@@ -203,5 +207,105 @@ func TestBuildHTTPIndexLive(t *testing.T) {
 	}
 	if exp := base + "/BigBuckBunny_320x180.mp4\n"; string(got) != exp {
 		t.Fatalf("content = %q, want %q", got, exp)
+	}
+}
+
+func requireBasicAuth(user, pass string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if u, p, ok := r.BasicAuth(); !ok || u != user || p != pass {
+			w.Header().Set("WWW-Authenticate", `Basic realm="test"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func TestConfigCredentials(t *testing.T) {
+	cfg, err := loadConfig([]string{"https://user:s3cret@host.example/movies"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := cfg.sources[0]; s.user != "user" || s.pass != "s3cret" {
+		t.Fatalf("credentials = %q:%q, want user:s3cret", s.user, s.pass)
+	}
+	if cfg.sources[0].url.User != nil {
+		t.Fatalf("credentials must be stripped from the stored URL, got %v", cfg.sources[0].url.User)
+	}
+
+	cfg, err = loadConfig([]string{"https://host.example/movies"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := cfg.sources[0]; s.user != "" || s.pass != "" {
+		t.Fatalf("expected no credentials, got %q:%q", s.user, s.pass)
+	}
+}
+
+// TestAuth covers credential handling for both protocols: an auth-protected
+// server fails without credentials, succeeds with user:pass@ in the URL, and
+// writes credentials into the .strm output only when -embed-creds is set.
+func TestAuth(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		handler http.Handler
+	}{
+		{"webdav", webdavHandler()},
+		{"http", httpIndexHandler()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(requireBasicAuth("plex", "s3cret", tc.handler))
+			defer srv.Close()
+			su, _ := url.Parse(srv.URL)
+			host := sanitizeHost(su.Host)
+			strm := func(root string) string {
+				return filepath.Join(root, host, "movies", "The Matrix (1999)", "The Matrix (1999).strm")
+			}
+			withCreds := "http://plex:s3cret@" + su.Host + "/movies"
+
+			// no credentials -> auth fails -> crawl errors
+			out := t.TempDir()
+			cfg, err := loadConfig([]string{"-root", out, srv.URL + "/movies"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := run(cfg); err == nil {
+				t.Fatal("expected an error without credentials on an auth-protected server")
+			}
+
+			// credentials + embed -> succeeds, creds in the .strm URL
+			out = t.TempDir()
+			cfg, err = loadConfig([]string{"-root", out, "-embed-creds", withCreds})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := run(cfg); err != nil {
+				t.Fatalf("authenticated crawl failed: %v", err)
+			}
+			got, err := os.ReadFile(strm(out))
+			if err != nil {
+				t.Fatalf("expected .strm: %v", err)
+			}
+			if !strings.Contains(string(got), "plex:s3cret@") {
+				t.Fatalf("-embed-creds should embed credentials, got %q", got)
+			}
+
+			// credentials, default (no embed) -> succeeds, creds NOT in output
+			out = t.TempDir()
+			cfg, err = loadConfig([]string{"-root", out, withCreds})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := run(cfg); err != nil {
+				t.Fatalf("authenticated crawl failed: %v", err)
+			}
+			got, err = os.ReadFile(strm(out))
+			if err != nil {
+				t.Fatalf("expected .strm: %v", err)
+			}
+			if strings.Contains(string(got), "s3cret") {
+				t.Fatalf("default run must not leak credentials, got %q", got)
+			}
+		})
 	}
 }
