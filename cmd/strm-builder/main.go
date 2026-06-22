@@ -103,7 +103,7 @@ func (m *multiFlag) Set(v string) error {
 func loadConfig(args []string) (*config, error) {
 	fs := flag.NewFlagSet("strm-builder", flag.ContinueOnError)
 	var urlsFlag multiFlag
-	fs.Var(&urlsFlag, "webdav-url", "WebDAV URL to crawl (repeatable)")
+	fs.Var(&urlsFlag, "url", "source URL to crawl, credentials as user:pass@host (repeatable)")
 	root := fs.String("root", getenv("ROOT_FOLDER", "/strm"), "root folder to save .strm trees under")
 	extList := fs.String("ext", getenv("MEDIA_EXTENSIONS", defaultExts), "media extensions, or * for all")
 	embed := fs.Bool("embed-creds", getbool("EMBED_CREDENTIALS", false), "embed user:pass@ in the .strm URLs")
@@ -117,12 +117,11 @@ func loadConfig(args []string) (*config, error) {
 
 	raw := append([]string{}, urlsFlag...)
 	raw = append(raw, fs.Args()...)
-	raw = append(raw, splitList(getenv("WEBDAV_URLS", getenv("WEBDAV_URL", "")))...)
+	raw = append(raw, splitList(getenv("SOURCE_URLS", ""))...)
 	if len(raw) == 0 {
-		return nil, errors.New("at least one WebDAV URL is required (-webdav-url, positional arg, or WEBDAV_URLS)")
+		return nil, errors.New("at least one source URL is required (-url, positional arg, or SOURCE_URLS)")
 	}
 
-	gUser, gPass := getenv("WEBDAV_USERNAME", ""), getenv("WEBDAV_PASSWORD", "")
 	var sources []*source
 	for _, r := range raw {
 		u, err := url.Parse(strings.TrimRight(r, "/"))
@@ -135,7 +134,7 @@ func loadConfig(args []string) (*config, error) {
 		if u.Host == "" {
 			return nil, fmt.Errorf("source URL %q must include a host", r)
 		}
-		s := &source{host: sanitizeHost(u.Host), user: gUser, pass: gPass}
+		s := &source{host: sanitizeHost(u.Host)}
 		if u.User != nil {
 			s.user = u.User.Username()
 			if p, ok := u.User.Password(); ok {

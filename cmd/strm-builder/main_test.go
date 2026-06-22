@@ -69,7 +69,7 @@ func TestBuildSubfolder(t *testing.T) {
 	su, _ := url.Parse(srv.URL)
 	out := t.TempDir()
 
-	cfg, err := loadConfig([]string{"-root", out, "-webdav-url", srv.URL + "/movies"})
+	cfg, err := loadConfig([]string{"-root", out, "-url", srv.URL + "/movies"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestBuildHTTPIndex(t *testing.T) {
 	su, _ := url.Parse(srv.URL)
 	out := t.TempDir()
 
-	cfg, err := loadConfig([]string{"-root", out, "-webdav-url", srv.URL + "/movies"})
+	cfg, err := loadConfig([]string{"-root", out, "-url", srv.URL + "/movies"})
 	if err != nil {
 		t.Fatal(err)
 	}

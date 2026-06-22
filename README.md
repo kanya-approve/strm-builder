@@ -24,7 +24,7 @@ include a subfolder — only that subfolder is crawled, but the path is still
 mirrored from the server root:
 
 ```
--webdav-url https://host/movies
+-url https://host/movies
   ->  <root>/host/movies/Title (2024)/Title (2024).strm
 ```
 
@@ -34,10 +34,9 @@ Each flag has a matching environment variable:
 
 | Flag / Env | Default | Description |
 |------------|---------|-------------|
-| `-webdav-url` / `WEBDAV_URLS` | — (required) | Source URL(s), WebDAV or HTTP directory-index (auto-detected); flag repeatable, env comma/space-separated, positional args also accepted |
+| `-url` / `SOURCE_URLS` | — (required) | Source URL(s), WebDAV or HTTP directory-index (auto-detected); put credentials in the URL as `user:pass@host`. Flag repeatable, env comma/space-separated, positional args also accepted |
 | `-root` / `ROOT_FOLDER` | `/strm` | Where the `.strm` trees are written |
-| `WEBDAV_USERNAME` / `WEBDAV_PASSWORD` | — | Basic auth, applied to URLs without an embedded `user:pass@` |
-| `-embed-creds` / `EMBED_CREDENTIALS` | `false` | Embed `user:pass@` in the `.strm` URLs |
+| `-embed-creds` / `EMBED_CREDENTIALS` | `false` | Embed the URL's `user:pass@` into the written `.strm` URLs |
 | `-concurrency` / `CONCURRENCY` | `8` | Parallel PROPFINDs — lower it for rate-limited servers |
 | `-ext` / `MEDIA_EXTENSIONS` | common video set | Comma-separated extensions, or `*` for all |
 | `-prune` / `PRUNE` | `false` | Delete `.strm` whose source no longer exists |
@@ -56,7 +55,6 @@ signed multi-arch release.
 ## Run
 
 ```bash
-WEBDAV_USERNAME=user WEBDAV_PASSWORD=pass \
-  ./strm-builder -webdav-url https://host/movies -webdav-url https://host/tvs \
+./strm-builder -url https://user:pass@host/movies -url https://user:pass@host/tvs \
   -root ./out -concurrency 2
 ```
