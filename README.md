@@ -46,16 +46,11 @@ Each flag has a matching environment variable:
 ## Build
 
 ```bash
-make image    # local container image via ko; override KO_DOCKER_REPO to publish
+make image    # local image: ko.local/strm-builder (override KO_DOCKER_REPO for a registry)
 ```
 
-`make image` defaults to a `ko.local` image. Publish by overriding the repo:
-
-```bash
-KO_DOCKER_REPO=ghcr.io/kanya-approve/strm-builder ko build ./cmd/strm-builder
-```
-
-Pushes to `main` build a `:main` / `:sha-<sha>` snapshot; tagging `vX.Y.Z` cuts a
+Built with [ko](https://ko.build) — no Dockerfile. CI publishes to `ghcr.io`:
+pushes to `main` build a `:main` / `:sha-<sha>` snapshot; tagging `vX.Y.Z` cuts a
 signed multi-arch release.
 
 ## Run
@@ -65,5 +60,15 @@ signed multi-arch release.
   -root ./out -concurrency 2
 ```
 
-Or via Make, using the same env-var knobs:
-`make run SOURCE_URLS=https://user:pass@host/movies DRY_RUN=true`.
+Or run the container image (`make image` first), passing config as env vars and
+mounting the output directory:
+
+```bash
+docker run --rm \
+  -e SOURCE_URLS=https://user:pass@host/movies \
+  -v "$PWD/out:/strm" \
+  ko.local/strm-builder
+```
+
+`make run` does both — builds the image, then `docker run`s it, forwarding the
+env-var knobs: `make run SOURCE_URLS=https://user:pass@host/movies DRY_RUN=true`.

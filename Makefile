@@ -1,8 +1,8 @@
 .PHONY: build test vet image run
 
-# Program vars are empty so the binary's own defaults apply unless overridden
-# (e.g. make run SOURCE_URLS=https://user:pass@host/movies PRUNE=true).
-KO_DOCKER_REPO ?= ko.local
+# Overridable via environment or command line. Program vars are empty so the
+# binary's own defaults apply unless set (e.g. make run SOURCE_URLS=...).
+KO_DOCKER_REPO ?= ko.local/strm-builder
 SOURCE_URLS ?=
 ROOT_FOLDER ?=
 MEDIA_EXTENSIONS ?=
@@ -23,7 +23,10 @@ vet:
 	go vet ./...
 
 image:
-	ko build --local ./cmd/strm-builder
+	ko build --local --bare ./cmd/strm-builder
 
-run:
-	go run ./cmd/strm-builder $(ARGS)
+run: image
+	docker run --rm \
+		-e SOURCE_URLS -e ROOT_FOLDER -e MEDIA_EXTENSIONS -e CONCURRENCY \
+		-e EMBED_CREDENTIALS -e PRUNE -e DRY_RUN -e TIMEOUT \
+		$(KO_DOCKER_REPO) $(ARGS)
