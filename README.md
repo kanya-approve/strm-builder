@@ -50,7 +50,7 @@ make image    # ko build + push to KO_DOCKER_REPO (default ghcr.io/kanya-approve
 ```
 
 Built with [ko](https://ko.build) — no Dockerfile. CI publishes automatically:
-pushes to `main` build a `:main` / `:sha-<sha>` snapshot; tagging `vX.Y.Z` cuts a
+pushes to `main` build a `:latest` / `:sha-<sha>` snapshot; tagging `vX.Y.Z` cuts a
 signed multi-arch release.
 
 ## Run
