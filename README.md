@@ -46,6 +46,12 @@ Each flag has a matching environment variable:
 ## Build
 
 ```bash
+make image    # local container image via ko; override KO_DOCKER_REPO to publish
+```
+
+`make image` defaults to a `ko.local` image. Publish by overriding the repo:
+
+```bash
 KO_DOCKER_REPO=ghcr.io/kanya-approve/strm-builder ko build ./cmd/strm-builder
 ```
 
@@ -58,3 +64,5 @@ signed multi-arch release.
 ./strm-builder -url https://user:pass@host/movies -url https://user:pass@host/tvs \
   -root ./out -concurrency 2
 ```
+
+Or run the container image: `make run ARGS="-url https://user:pass@host/movies -dry-run"`.
