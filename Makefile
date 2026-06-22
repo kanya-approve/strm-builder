@@ -26,7 +26,4 @@ image:
 	ko build --local ./cmd/strm-builder
 
 run:
-	docker run --rm \
-		-e SOURCE_URLS -e ROOT_FOLDER -e MEDIA_EXTENSIONS -e CONCURRENCY \
-		-e EMBED_CREDENTIALS -e PRUNE -e DRY_RUN -e TIMEOUT \
-		$$(ko build --local ./cmd/strm-builder) $(ARGS)
+	go run ./cmd/strm-builder $(ARGS)

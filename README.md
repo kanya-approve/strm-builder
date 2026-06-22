@@ -65,5 +65,5 @@ signed multi-arch release.
   -root ./out -concurrency 2
 ```
 
-Or run the container image, configured by the same env vars:
+Or via Make, using the same env-var knobs:
 `make run SOURCE_URLS=https://user:pass@host/movies DRY_RUN=true`.
