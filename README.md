@@ -65,4 +65,5 @@ signed multi-arch release.
   -root ./out -concurrency 2
 ```
 
-Or run the container image: `make run ARGS="-url https://user:pass@host/movies -dry-run"`.
+Or run the container image, configured by the same env vars:
+`make run SOURCE_URLS=https://user:pass@host/movies DRY_RUN=true`.
