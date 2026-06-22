@@ -60,8 +60,11 @@ signed multi-arch release.
   -root ./out -concurrency 2
 ```
 
-Or run the published image straight from ghcr.io (no build needed), passing config
-as env vars and mounting the output directory:
+For local development, `make run` runs it from source, forwarding the env-var
+knobs: `make run SOURCE_URLS=https://user:pass@host/movies DRY_RUN=true`.
+
+Or run the published image from ghcr.io — no checkout or build needed — passing
+config as env vars and mounting the output directory:
 
 ```bash
 docker run --rm \
@@ -69,6 +72,3 @@ docker run --rm \
   -v "$PWD/out:/strm" \
   ghcr.io/kanya-approve/strm-builder:latest
 ```
-
-`make run` wraps that `docker run` and forwards the env-var knobs:
-`make run SOURCE_URLS=https://user:pass@host/movies DRY_RUN=true`.

@@ -1,7 +1,6 @@
 .PHONY: build test vet image run
 
 KO_DOCKER_REPO ?= ghcr.io/kanya-approve/strm-builder
-TAG ?= latest
 # Program vars are empty so the binary's own defaults apply unless overridden
 # (e.g. make run SOURCE_URLS=https://user:pass@host/movies PRUNE=true).
 SOURCE_URLS ?=
@@ -27,7 +26,4 @@ image:
 	ko build --bare ./cmd/strm-builder
 
 run:
-	docker run --rm \
-		-e SOURCE_URLS -e ROOT_FOLDER -e MEDIA_EXTENSIONS -e CONCURRENCY \
-		-e EMBED_CREDENTIALS -e PRUNE -e DRY_RUN -e TIMEOUT \
-		$(KO_DOCKER_REPO):$(TAG) $(ARGS)
+	go run ./cmd/strm-builder $(ARGS)
