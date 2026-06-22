@@ -97,8 +97,8 @@ func TestBuildSubfolder(t *testing.T) {
 func indexHTML(kids []child) string {
 	var sb strings.Builder
 	sb.WriteString(`<html><body><pre>`)
-	sb.WriteString(`<a href="?C=N;O=D">Name</a>` + "\n")        // sort link, must be ignored
-	sb.WriteString(`<a href="../">Parent Directory</a>` + "\n") // parent link, must be ignored
+	sb.WriteString(`<a href="?C=N;O=D">Name</a>` + "\n")
+	sb.WriteString(`<a href="../">Parent Directory</a>` + "\n")
 	for _, c := range kids {
 		href := (&url.URL{Path: c.name}).EscapedPath()
 		sb.WriteString(`<a href="` + href + `">` + c.name + "</a>\n")
@@ -189,7 +189,7 @@ func TestBuildHTTPIndexLive(t *testing.T) {
 	}
 
 	out := t.TempDir()
-	cfg, err := loadConfig([]string{"-root", out, base}) // default media filter
+	cfg, err := loadConfig([]string{"-root", out, base})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,8 +243,9 @@ func TestConfigCredentials(t *testing.T) {
 }
 
 // TestAuth covers credential handling for both protocols: an auth-protected
-// server fails without credentials, succeeds with user:pass@ in the URL, and
-// writes credentials into the .strm output only when -embed-creds is set.
+// server fails without credentials, succeeds with user:pass@ in the URL, embeds
+// those credentials into the .strm output by default, and omits them only with
+// -embed-creds=false.
 func TestAuth(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -263,7 +264,6 @@ func TestAuth(t *testing.T) {
 			}
 			withCreds := "http://plex:s3cret@" + su.Host + "/movies"
 
-			// no credentials -> auth fails -> crawl errors
 			out := t.TempDir()
 			cfg, err := loadConfig([]string{"-root", out, srv.URL + "/movies"})
 			if err != nil {
@@ -273,9 +273,8 @@ func TestAuth(t *testing.T) {
 				t.Fatal("expected an error without credentials on an auth-protected server")
 			}
 
-			// credentials + embed -> succeeds, creds in the .strm URL
 			out = t.TempDir()
-			cfg, err = loadConfig([]string{"-root", out, "-embed-creds", withCreds})
+			cfg, err = loadConfig([]string{"-root", out, withCreds})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -287,12 +286,11 @@ func TestAuth(t *testing.T) {
 				t.Fatalf("expected .strm: %v", err)
 			}
 			if !strings.Contains(string(got), "plex:s3cret@") {
-				t.Fatalf("-embed-creds should embed credentials, got %q", got)
+				t.Fatalf("embed-creds defaults on; expected credentials in .strm, got %q", got)
 			}
 
-			// credentials, default (no embed) -> succeeds, creds NOT in output
 			out = t.TempDir()
-			cfg, err = loadConfig([]string{"-root", out, withCreds})
+			cfg, err = loadConfig([]string{"-root", out, "-embed-creds=false", withCreds})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -304,7 +302,7 @@ func TestAuth(t *testing.T) {
 				t.Fatalf("expected .strm: %v", err)
 			}
 			if strings.Contains(string(got), "s3cret") {
-				t.Fatalf("default run must not leak credentials, got %q", got)
+				t.Fatalf("-embed-creds=false must not write credentials, got %q", got)
 			}
 		})
 	}

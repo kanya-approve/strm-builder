@@ -106,7 +106,7 @@ func loadConfig(args []string) (*config, error) {
 	fs.Var(&urlsFlag, "url", "source URL to crawl, credentials as user:pass@host (repeatable)")
 	root := fs.String("root", getenv("ROOT_FOLDER", "/strm"), "root folder to save .strm trees under")
 	extList := fs.String("ext", getenv("MEDIA_EXTENSIONS", defaultExts), "media extensions, or * for all")
-	embed := fs.Bool("embed-creds", getbool("EMBED_CREDENTIALS", false), "embed user:pass@ in the .strm URLs")
+	embed := fs.Bool("embed-creds", getbool("EMBED_CREDENTIALS", true), "embed user:pass@ in the .strm URLs")
 	conc := fs.Int("concurrency", getint("CONCURRENCY", 8), "parallel PROPFIND requests")
 	prune := fs.Bool("prune", getbool("PRUNE", false), "delete .strm whose source no longer exists")
 	dry := fs.Bool("dry-run", getbool("DRY_RUN", false), "log actions without writing")
@@ -307,8 +307,6 @@ func (b *builder) process(s *source, entries []entry) {
 	}
 }
 
-// probe fixes a source's protocol from its root: a successful PROPFIND means
-// WebDAV; any failure falls back to parsing the server's HTML directory index.
 func (b *builder) probe(s *source) ([]entry, error) {
 	entries, err := b.propfind(s, s.url)
 	if err == nil {
@@ -467,11 +465,11 @@ func parseHTMLIndex(base *url.URL, body []byte) []entry {
 			continue
 		}
 		if !strings.HasPrefix(abs.Path, dirPath) {
-			continue // parent dir, or outside this source's scope
+			continue
 		}
 		rest := strings.Trim(strings.TrimPrefix(abs.Path, dirPath), "/")
 		if rest == "" || strings.Contains(rest, "/") {
-			continue // self/sort link, or not a direct child
+			continue
 		}
 		if seen[abs.Path] {
 			continue

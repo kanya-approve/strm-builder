@@ -36,7 +36,7 @@ Each flag has a matching environment variable:
 |------------|---------|-------------|
 | `-url` / `SOURCE_URLS` | — (required) | Source URL(s), WebDAV or HTTP directory-index (auto-detected); put credentials in the URL as `user:pass@host`. Flag repeatable, env comma/space-separated, positional args also accepted |
 | `-root` / `ROOT_FOLDER` | `/strm` | Where the `.strm` trees are written |
-| `-embed-creds` / `EMBED_CREDENTIALS` | `false` | Embed the URL's `user:pass@` into the written `.strm` URLs |
+| `-embed-creds` / `EMBED_CREDENTIALS` | `true` | Embed the URL's `user:pass@` into the written `.strm` URLs (set `false` to keep them out) |
 | `-concurrency` / `CONCURRENCY` | `8` | Parallel PROPFINDs — lower it for rate-limited servers |
 | `-ext` / `MEDIA_EXTENSIONS` | common video set | Comma-separated extensions, or `*` for all |
 | `-prune` / `PRUNE` | `false` | Delete `.strm` whose source no longer exists |
