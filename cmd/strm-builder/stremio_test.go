@@ -79,7 +79,7 @@ func TestSanitizeName(t *testing.T) {
 }
 
 func TestLayoutPaths(t *testing.T) {
-	plex := &bridge{cfg: &serveConfig{root: "/out", target: "plex", anime: true, animeDir: "Anime"}}
+	plex := &bridge{cfg: &serveConfig{root: "/out", target: "plex", anime: true, animeDir: "Anime", animeMoviesDir: "Anime Movies"}}
 	if got := plex.moviePath("The Matrix", "1999", "", false); got != filepath.Join("/out", "Movies", "The Matrix (1999)", "The Matrix (1999).strm") {
 		t.Errorf("plex moviePath: %q", got)
 	}
@@ -99,15 +99,20 @@ func TestLayoutPaths(t *testing.T) {
 		t.Errorf("versioned episodePath: %q", got)
 	}
 
-	// Anime routes to its own top folder for both movies and series.
-	if got := plex.moviePath("Akira", "1988", "", true); got != filepath.Join("/out", "Anime", "Akira (1988)", "Akira (1988).strm") {
+	// Anime movies and anime series go to separate folders (one type per library).
+	if got := plex.moviePath("Akira", "1988", "", true); got != filepath.Join("/out", "Anime Movies", "Akira (1988)", "Akira (1988).strm") {
 		t.Errorf("anime moviePath: %q", got)
 	}
 	if got := plex.episodePath("Naruto", "2002", 1, 1, "", true); got != filepath.Join("/out", "Anime", "Naruto (2002)", "Season 01", "Naruto - S01E01.strm") {
 		t.Errorf("anime episodePath: %q", got)
 	}
+	// Empty anime-movies folder puts anime movies in the regular Movies library.
+	inMovies := &bridge{cfg: &serveConfig{root: "/out", target: "plex", anime: true, animeDir: "Anime", animeMoviesDir: ""}}
+	if got := inMovies.moviePath("Akira", "1988", "", true); got != filepath.Join("/out", "Movies", "Akira (1988)", "Akira (1988).strm") {
+		t.Errorf("anime-movies-in-movies: %q", got)
+	}
 	// With anime routing disabled, anime falls back to Movies/TV.
-	off := &bridge{cfg: &serveConfig{root: "/out", target: "plex", anime: false, animeDir: "Anime"}}
+	off := &bridge{cfg: &serveConfig{root: "/out", target: "plex", anime: false, animeDir: "Anime", animeMoviesDir: "Anime Movies"}}
 	if got := off.moviePath("Akira", "1988", "", true); got != filepath.Join("/out", "Movies", "Akira (1988)", "Akira (1988).strm") {
 		t.Errorf("anime-off moviePath: %q", got)
 	}

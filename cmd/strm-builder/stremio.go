@@ -39,20 +39,21 @@ import (
 const tmdbBase = "https://api.themoviedb.org/3"
 
 type serveConfig struct {
-	addon       string // Stremio addon base URL, no trailing /manifest.json
-	root        string // output root for the .strm trees
-	target      string // plex | jellyfin | emby | kodi (layout preset)
-	listen      string // HTTP listen address
-	tmdbKey     string // TMDB v3 API key
-	versions    int    // how many versions (by size) to keep per item
-	pick        string // "largest" or "smallest" - which single version to keep
-	sample      int    // addon calls to union before ranking
-	secret      string // optional shared secret required on the webhook
-	anime       bool   // route Japanese animation into its own top folder
-	animeDir    string // that folder's name
-	dryRun      bool
-	timeout     time.Duration
-	concurrency int
+	addon          string // Stremio addon base URL, no trailing /manifest.json
+	root           string // output root for the .strm trees
+	target         string // plex | jellyfin | emby | kodi (layout preset)
+	listen         string // HTTP listen address
+	tmdbKey        string // TMDB v3 API key
+	versions       int    // how many versions (by size) to keep per item
+	pick           string // "largest" or "smallest" - which single version to keep
+	sample         int    // addon calls to union before ranking
+	secret         string // optional shared secret required on the webhook
+	anime          bool   // route Japanese animation into its own top folder
+	animeDir       string // anime series folder
+	animeMoviesDir string // anime movies folder (empty = put them in Movies)
+	dryRun         bool
+	timeout        time.Duration
+	concurrency    int
 }
 
 // addonManifest is the subset of a Stremio addon manifest we need to know how to
@@ -75,7 +76,8 @@ func loadServeConfig(args []string) (*serveConfig, error) {
 	sample := fs.Int("sample", getint("SAMPLE", 1), "addon calls to union before ranking (it returns a random subset per call; raise for -versions >1)")
 	secret := fs.String("webhook-secret", getenv("WEBHOOK_SECRET", ""), "if set, require this value in the webhook Authorization header or ?secret=")
 	anime := fs.Bool("anime", getbool("ANIME_SPLIT", true), "route anime (Japanese animation) into its own top folder")
-	animeDir := fs.String("anime-folder", getenv("ANIME_FOLDER", "Anime"), "top folder name for anime when -anime is set")
+	animeDir := fs.String("anime-folder", getenv("ANIME_FOLDER", "Anime"), "folder for anime series when -anime is set")
+	animeMoviesDir := fs.String("anime-movies-folder", getenv("ANIME_MOVIES_FOLDER", "Anime Movies"), "folder for anime movies; empty puts them in Movies")
 	dry := fs.Bool("dry-run", getbool("DRY_RUN", false), "log actions without writing")
 	timeout := fs.Duration("timeout", getdur("TIMEOUT", 30*time.Second), "per-request timeout")
 	conc := fs.Int("concurrency", getint("CONCURRENCY", 2), "parallel episode resolutions (addons rate-limit; keep it low)")
@@ -119,20 +121,21 @@ func loadServeConfig(args []string) (*serveConfig, error) {
 	}
 
 	return &serveConfig{
-		addon:       a,
-		root:        *root,
-		target:      *target,
-		listen:      *listen,
-		tmdbKey:     strings.TrimSpace(*tmdb),
-		versions:    *versions,
-		pick:        *pick,
-		sample:      *sample,
-		secret:      strings.TrimSpace(*secret),
-		anime:       *anime,
-		animeDir:    strings.TrimSpace(*animeDir),
-		dryRun:      *dry,
-		timeout:     *timeout,
-		concurrency: *conc,
+		addon:          a,
+		root:           *root,
+		target:         *target,
+		listen:         *listen,
+		tmdbKey:        strings.TrimSpace(*tmdb),
+		versions:       *versions,
+		pick:           *pick,
+		sample:         *sample,
+		secret:         strings.TrimSpace(*secret),
+		anime:          *anime,
+		animeDir:       strings.TrimSpace(*animeDir),
+		animeMoviesDir: strings.TrimSpace(*animeMoviesDir),
+		dryRun:         *dry,
+		timeout:        *timeout,
+		concurrency:    *conc,
 	}, nil
 }
 
@@ -724,9 +727,18 @@ func (b *bridge) showsDir() string {
 	return "Shows"
 }
 
+// topDir keeps each library one type: anime series and anime movies go to
+// separate folders (a Plex library can't mix movies and shows). An empty anime
+// folder name falls back to the regular Movies/TV folder.
 func (b *bridge) topDir(mediaType string, anime bool) string {
-	if anime && b.cfg.anime && b.cfg.animeDir != "" {
-		return b.cfg.animeDir
+	if anime && b.cfg.anime {
+		if mediaType == "movie" {
+			if b.cfg.animeMoviesDir != "" {
+				return b.cfg.animeMoviesDir
+			}
+		} else if b.cfg.animeDir != "" {
+			return b.cfg.animeDir
+		}
 	}
 	if mediaType == "movie" {
 		return b.moviesDir()

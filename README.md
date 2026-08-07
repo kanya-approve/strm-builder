@@ -97,11 +97,13 @@ expands a series into episodes, so a TMDB API key is required (the same one your
 Seerr instance already uses). `-target` selects the folder/naming convention.
 
 Output is **not** a mirror of the source; it's a clean library built from TMDB
-metadata, split into top-level folders: `Movies/`, `TV Shows/`, and `Anime/`.
-Anime is detected exactly the way Overseerr/Jellyseerr separate it — the TMDB
-`anime` keyword (210024) — so the split matches what you see in Seerr. Turn it off
-with `-anime=false` (anime then lands in `Movies`/`TV Shows`), or rename the
-bucket with `-anime-folder`.
+metadata, split into top-level folders: `Movies/`, `TV Shows/`, `Anime/` (series)
+and `Anime Movies/`. Anime is detected exactly the way Overseerr/Jellyseerr
+separate it — the TMDB `anime` keyword (210024) — so the split matches what you see
+in Seerr. Anime movies get their own folder rather than mixing with anime series,
+since a Plex library is one type (movies *or* shows). Turn the whole split off with
+`-anime=false`; rename the buckets with `-anime-folder` / `-anime-movies-folder`;
+or set `-anime-movies-folder=` (empty) to file anime movies under `Movies/`.
 
 ### Quality ranking and versions
 
@@ -153,8 +155,9 @@ Seerr via `GET /fulfill?type=movie&tmdb=278` or `?type=tv&tmdb=1396&season=1`.
 | `-addon` / `STREMIO_ADDON` | — (required) | Stremio addon URL (its `manifest.json`, or the base) |
 | `-tmdb-key` / `TMDB_API_KEY` | — (required) | TMDB v3 API key, for titles/years and episode lists |
 | `-target` / `TARGET` | `plex` | Layout preset: `plex`, `jellyfin`, `emby`, `kodi` |
-| `-anime` / `ANIME_SPLIT` | `true` | Route anime (TMDB `anime` keyword) into its own top folder |
-| `-anime-folder` / `ANIME_FOLDER` | `Anime` | Name of that folder |
+| `-anime` / `ANIME_SPLIT` | `true` | Route anime (TMDB `anime` keyword) into its own top folders |
+| `-anime-folder` / `ANIME_FOLDER` | `Anime` | Folder for anime series |
+| `-anime-movies-folder` / `ANIME_MOVIES_FOLDER` | `Anime Movies` | Folder for anime movies; empty puts them in `Movies` |
 | `-root` / `ROOT_FOLDER` | `/strm` | Where the `.strm` trees are written |
 | `-listen` / `LISTEN_ADDR` | `:8080` | HTTP listen address for the webhook |
 | `-versions` / `VERSIONS` | `1` | Resolutions to keep per item (largest of each), best-first, as separate `.strm` |
