@@ -78,6 +78,20 @@ type config struct {
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	// Two modes: the default crawler, and "serve" - a request-driven bridge that
+	// turns Stremio addon streams into .strm files (see stremio.go).
+	if len(os.Args) > 1 && os.Args[1] == "serve" {
+		if err := runServe(os.Args[2:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				os.Exit(0)
+			}
+			slog.Error("serve failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	cfg, err := loadConfig(os.Args[1:])
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
