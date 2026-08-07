@@ -27,7 +27,6 @@ func TestStreamSizeAndResolution(t *testing.T) {
 			t.Errorf("res %q = %q, want %q", c.title, got, c.wantRes)
 		}
 	}
-	// structured behaviorHints.videoSize wins over the title text
 	s := stremioStream{Title: "x [gb1 1.0 GB]"}
 	s.BehaviorHints.VideoSize = 999
 	if got := streamSize(s); got != 999 {
@@ -46,12 +45,10 @@ func TestSelectVersions(t *testing.T) {
 	for _, s := range streams {
 		cands = append(cands, candidate{url: s.URL, size: streamSize(s), res: streamResolution(s)})
 	}
-	// versions=1 -> largest of the best resolution (the 54.2 GB 2160p)
 	b1 := &bridge{cfg: &serveConfig{versions: 1, pick: "largest"}}
 	if v := b1.selectVersions(cands); len(v) != 1 || v[0].url != "uhd-dv" {
 		t.Fatalf("versions=1: %+v", v)
 	}
-	// versions=2 -> largest 2160p then largest 1080p
 	b2 := &bridge{cfg: &serveConfig{versions: 2, pick: "largest"}}
 	if v := b2.selectVersions(cands); len(v) != 2 || v[0].url != "uhd-dv" || v[1].url != "hd-remux" {
 		t.Fatalf("versions=2: %+v", v)
@@ -74,7 +71,6 @@ func TestSanitizeName(t *testing.T) {
 func TestLayoutPaths(t *testing.T) {
 	plex := &bridge{cfg: &serveConfig{root: "/out", target: "plex", anime: true, animeDir: "Anime", animeMoviesDir: "Anime Movies"}}
 
-	// TMDB-correct folder; the source release name is kept verbatim, .mkv -> .strm.
 	inception := "https://host/movies/Inception (2010)/Inception.2010.UHD.BluRay.2160p.DTS-HD.MA.5.1.DV.HEVC.HYBRID.REMUX-FraMeSToR.mkv"
 	if got := plex.moviePath("Inception", "2010", "27205", releaseName(inception), false); got != filepath.Join("/out", "Movies", "Inception (2010) {tmdb-27205}", "Inception.2010.UHD.BluRay.2160p.DTS-HD.MA.5.1.DV.HEVC.HYBRID.REMUX-FraMeSToR.strm") {
 		t.Errorf("movie: %q", got)
@@ -85,12 +81,10 @@ func TestLayoutPaths(t *testing.T) {
 		t.Errorf("episode: %q", got)
 	}
 
-	// No tvdb id falls back to a {tmdb-} folder tag.
 	if got := plex.episodePath("Breaking Bad", "2008", "", "1396", 1, releaseName(bb), false); got != filepath.Join("/out", "TV Shows", "Breaking Bad (2008) {tmdb-1396}", "Season 01", "Breaking Bad (2008) - S01E01 - Pilot [Bluray-1080p Remux][DTS-HD MA 5.1][AVC]-FraMeSToR.strm") {
 		t.Errorf("tmdb-fallback episode: %q", got)
 	}
 
-	// Anime movie -> Anime Movies; anime series -> Anime.
 	saga := "https://host/movies/Saga of Tanya the Evil - The Movie (2019)/Saga of Tanya the Evil The Movie (2019) {imdb-tt9507276} [Bluray-1080p][FLAC 5.1][x265]-Vodes.mkv"
 	if got := plex.moviePath("Saga of Tanya the Evil: The Movie", "2019", "553839", releaseName(saga), true); got != filepath.Join("/out", "Anime Movies", "Saga of Tanya the Evil The Movie (2019) {tmdb-553839}", "Saga of Tanya the Evil The Movie (2019) {imdb-tt9507276} [Bluray-1080p][FLAC 5.1][x265]-Vodes.strm") {
 		t.Errorf("anime movie: %q", got)
@@ -100,7 +94,6 @@ func TestLayoutPaths(t *testing.T) {
 		t.Errorf("anime episode: %q", got)
 	}
 
-	// Empty anime-movies folder files anime movies under Movies.
 	inMovies := &bridge{cfg: &serveConfig{root: "/out", target: "plex", anime: true, animeDir: "Anime", animeMoviesDir: ""}}
 	if got := inMovies.moviePath("Akira", "1988", "149", releaseName("https://host/x/Akira.1988.1080p.BluRay.x264.mkv"), true); got != filepath.Join("/out", "Movies", "Akira (1988) {tmdb-149}", "Akira.1988.1080p.BluRay.x264.strm") {
 		t.Errorf("anime-movies-in-movies: %q", got)
@@ -168,7 +161,6 @@ func TestHookToReq(t *testing.T) {
 		t.Fatalf("seasons = %v", req.seasons)
 	}
 
-	// tmdbId as a quoted string must parse the same way.
 	var h2 seerrHook
 	_ = json.Unmarshal([]byte(`{"media":{"media_type":"movie","tmdbId":"278"}}`), &h2)
 	if r2, err := hookToReq(h2); err != nil || r2.tmdbID != "278" || r2.mediaType != "movie" {

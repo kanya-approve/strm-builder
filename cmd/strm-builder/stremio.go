@@ -747,8 +747,6 @@ func seriesIDTag(tvdbID, tmdbID string) string {
 	return "{tmdb-" + tmdbID + "}"
 }
 
-// releaseName is the source file's own name, kept intact so the .strm carries all
-// its quality tags; strmName just swaps the media extension for .strm.
 func releaseName(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
