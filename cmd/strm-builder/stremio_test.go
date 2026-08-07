@@ -128,15 +128,17 @@ func TestIsAnime(t *testing.T) {
 	}
 }
 
-func TestMarkAvailable(t *testing.T) {
-	var availablePath, sentKey string
+func TestUpdateSeerr(t *testing.T) {
+	var postPath, sentKey string
+	var postBody map[string]bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sentKey = r.Header.Get("X-Api-Key")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/request/42":
-			io.WriteString(w, `{"media":{"id":99}}`)
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/media/99/available":
-			availablePath = r.URL.Path
+			io.WriteString(w, `{"is4k":true,"media":{"id":99}}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/media/99/partial":
+			postPath = r.URL.Path
+			json.NewDecoder(r.Body).Decode(&postBody)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -144,15 +146,18 @@ func TestMarkAvailable(t *testing.T) {
 	defer srv.Close()
 
 	b := &bridge{cfg: &serveConfig{seerrURL: srv.URL, seerrKey: "secret", timeout: 5 * time.Second}, client: srv.Client()}
-	b.markAvailable("42")
+	b.updateSeerr("42", "partial")
 	if sentKey != "secret" {
 		t.Errorf("X-Api-Key = %q", sentKey)
 	}
-	if availablePath != "/api/v1/media/99/available" {
-		t.Fatalf("available not called; got %q", availablePath)
+	if postPath != "/api/v1/media/99/partial" {
+		t.Fatalf("status not routed; got %q", postPath)
+	}
+	if !postBody["is4k"] {
+		t.Errorf("is4k from the request not forwarded: %v", postBody)
 	}
 
-	(&bridge{cfg: &serveConfig{}, client: srv.Client()}).markAvailable("42")
+	(&bridge{cfg: &serveConfig{}, client: srv.Client()}).updateSeerr("42", "available")
 }
 
 func TestBaseID(t *testing.T) {

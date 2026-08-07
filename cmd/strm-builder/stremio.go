@@ -369,42 +369,44 @@ func (b *bridge) fulfill(req fulfillReq) {
 	defer b.inflight.Delete(key)
 
 	var written, missing int64
+	status := "available"
 	start := time.Now()
 	if req.mediaType == "movie" {
 		written, missing = b.fulfillMovie(req)
 	} else {
-		written, missing = b.fulfillSeries(req)
+		written, missing, status = b.fulfillSeries(req)
 	}
-	slog.Info("fulfilled", "key", key, "written", written, "missing", missing,
+	slog.Info("fulfilled", "key", key, "written", written, "missing", missing, "status", status,
 		"took", time.Since(start).Round(time.Millisecond).String())
 
 	if written > 0 && req.requestID != "" {
-		b.markAvailable(req.requestID)
+		b.updateSeerr(req.requestID, status)
 	}
 }
 
-func (b *bridge) markAvailable(requestID string) {
+func (b *bridge) updateSeerr(requestID, status string) {
 	if b.cfg.seerrURL == "" || b.cfg.seerrKey == "" {
 		return
 	}
-	var reqInfo struct {
+	var info struct {
+		Is4k  bool `json:"is4k"`
 		Media struct {
 			ID int `json:"id"`
 		} `json:"media"`
 	}
-	if err := b.seerrDo(http.MethodGet, "/api/v1/request/"+requestID, nil, &reqInfo); err != nil {
+	if err := b.seerrDo(http.MethodGet, "/api/v1/request/"+requestID, nil, &info); err != nil {
 		slog.Warn("seerr: request lookup failed", "request", requestID, "err", err)
 		return
 	}
-	if reqInfo.Media.ID == 0 {
+	if info.Media.ID == 0 {
 		slog.Warn("seerr: no media id for request", "request", requestID)
 		return
 	}
-	if err := b.seerrDo(http.MethodPost, fmt.Sprintf("/api/v1/media/%d/available", reqInfo.Media.ID), map[string]bool{"is4k": false}, nil); err != nil {
-		slog.Warn("seerr: mark available failed", "media", reqInfo.Media.ID, "err", err)
+	if err := b.seerrDo(http.MethodPost, fmt.Sprintf("/api/v1/media/%d/%s", info.Media.ID, status), map[string]bool{"is4k": info.Is4k}, nil); err != nil {
+		slog.Warn("seerr: status update failed", "media", info.Media.ID, "status", status, "err", err)
 		return
 	}
-	slog.Info("seerr: marked available", "request", requestID, "media", reqInfo.Media.ID)
+	slog.Info("seerr: status updated", "request", requestID, "media", info.Media.ID, "status", status, "is4k", info.Is4k)
 }
 
 func (b *bridge) seerrDo(method, path string, body, out any) error {
@@ -473,11 +475,11 @@ func (b *bridge) fulfillMovie(req fulfillReq) (written, missing int64) {
 	return written, 0
 }
 
-func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64) {
+func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64, status string) {
 	meta, err := b.tmdbTV(req.tmdbID)
 	if err != nil {
 		slog.Warn("tmdb tv lookup failed", "tmdb", req.tmdbID, "err", err)
-		return 0, 1
+		return 0, 1, "partial"
 	}
 	anime := meta.isAnime()
 	tvdbID := meta.tvdb()
@@ -485,13 +487,13 @@ func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64) {
 	if req.url != "" {
 		if req.episode == 0 || len(req.seasons) != 1 {
 			slog.Warn("direct url for tv needs exactly one season and an episode", "tmdb", req.tmdbID)
-			return 0, 1
+			return 0, 1, "partial"
 		}
 		out := b.episodePath(meta.title(), meta.year(), tvdbID, req.tmdbID, req.seasons[0], releaseName(req.url), anime)
 		if b.writeStrm(out, req.url) {
-			return 1, 0
+			return 1, 0, "partial"
 		}
-		return 0, 0
+		return 0, 0, "partial"
 	}
 
 	seasons := req.seasons
@@ -534,7 +536,18 @@ func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64) {
 		}
 	}
 	wg.Wait()
-	return written, missing
+
+	totalRegular := 0
+	for _, s := range meta.Seasons {
+		if s.SeasonNumber > 0 {
+			totalRegular++
+		}
+	}
+	status = "partial"
+	if missing == 0 && len(seasons) >= totalRegular {
+		status = "available"
+	}
+	return written, missing, status
 }
 
 // baseID picks the id scheme the addon accepts: tmdb: when advertised (or when we
