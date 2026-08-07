@@ -23,7 +23,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -370,7 +372,7 @@ func (b *bridge) fulfillMovie(req fulfillReq) (written, missing int64) {
 	anime := meta.isAnime()
 
 	if req.url != "" {
-		out := b.moviePath(meta.title(), meta.year(), "", anime)
+		out := b.moviePath(meta.title(), meta.year(), req.tmdbID, releaseName(req.url), anime)
 		if b.writeStrm(out, req.url) {
 			return 1, 0
 		}
@@ -383,10 +385,8 @@ func (b *bridge) fulfillMovie(req fulfillReq) (written, missing int64) {
 		slog.Warn("no stream for movie", "title", meta.title(), "id", id, "err", err)
 		return 0, 1
 	}
-	picks := b.selectVersions(cands)
-	labels := versionLabels(picks)
-	for i, p := range picks {
-		out := b.moviePath(meta.title(), meta.year(), labels[i], anime)
+	for _, p := range b.selectVersions(cands) {
+		out := b.moviePath(meta.title(), meta.year(), req.tmdbID, releaseName(p.url), anime)
 		if b.writeStrm(out, p.url) {
 			written++
 		}
@@ -401,13 +401,14 @@ func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64) {
 		return 0, 1
 	}
 	anime := meta.isAnime()
+	tvdbID := meta.tvdb()
 
 	if req.url != "" {
 		if req.episode == 0 || len(req.seasons) != 1 {
 			slog.Warn("direct url for tv needs exactly one season and an episode", "tmdb", req.tmdbID)
 			return 0, 1
 		}
-		out := b.episodePath(meta.title(), meta.year(), req.seasons[0], req.episode, "", anime)
+		out := b.episodePath(meta.title(), meta.year(), tvdbID, req.tmdbID, req.seasons[0], releaseName(req.url), anime)
 		if b.writeStrm(out, req.url) {
 			return 1, 0
 		}
@@ -444,10 +445,8 @@ func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64) {
 					atomic.AddInt64(&missing, 1)
 					return
 				}
-				picks := b.selectVersions(cands)
-				labels := versionLabels(picks)
-				for i, p := range picks {
-					out := b.episodePath(meta.title(), meta.year(), season, episode, labels[i], anime)
+				for _, p := range b.selectVersions(cands) {
+					out := b.episodePath(meta.title(), meta.year(), tvdbID, req.tmdbID, season, releaseName(p.url), anime)
 					if b.writeStrm(out, p.url) {
 						atomic.AddInt64(&written, 1)
 					}
@@ -643,21 +642,6 @@ func betterWithin(c, cur candidate, pick string) bool {
 // versionLabels returns a filename suffix per kept version. One version → no
 // suffix (clean name). Multiple → the resolution (each kept version is a distinct
 // resolution, so these never collide); unknown resolution becomes "SD".
-func versionLabels(picks []candidate) []string {
-	if len(picks) <= 1 {
-		return []string{""}
-	}
-	labels := make([]string, len(picks))
-	for i, p := range picks {
-		if p.res != "" {
-			labels[i] = p.res
-		} else {
-			labels[i] = "SD"
-		}
-	}
-	return labels
-}
-
 // getBody GETs url and returns the body, retrying on 429/5xx with backoff that
 // honours a Retry-After header. Addons commonly rate-limit, so this keeps a
 // season's worth of episode lookups from failing under a burst.
@@ -746,22 +730,35 @@ func (b *bridge) topDir(mediaType string, anime bool) string {
 	return b.showsDir()
 }
 
-func (b *bridge) moviePath(title, year, suffix string, anime bool) string {
-	folder := titleYear(title, year)
-	name := folder
-	if suffix != "" {
-		name = folder + " - " + sanitizeName(suffix)
-	}
-	return filepath.Join(b.cfg.root, b.topDir("movie", anime), folder, name+".strm")
+func (b *bridge) moviePath(title, year, tmdbID, release string, anime bool) string {
+	folder := titleYear(title, year) + " {tmdb-" + tmdbID + "}"
+	return filepath.Join(b.cfg.root, b.topDir("movie", anime), folder, strmName(release))
 }
 
-func (b *bridge) episodePath(show, year string, season, episode int, suffix string, anime bool) string {
-	folder := titleYear(show, year)
-	base := fmt.Sprintf("%s - S%02dE%02d", sanitizeName(show), season, episode)
-	if suffix != "" {
-		base += " - " + sanitizeName(suffix)
+func (b *bridge) episodePath(show, year, tvdbID, tmdbID string, season int, release string, anime bool) string {
+	folder := titleYear(show, year) + " " + seriesIDTag(tvdbID, tmdbID)
+	return filepath.Join(b.cfg.root, b.topDir("tv", anime), folder, fmt.Sprintf("Season %02d", season), strmName(release))
+}
+
+func seriesIDTag(tvdbID, tmdbID string) string {
+	if tvdbID != "" {
+		return "{tvdb-" + tvdbID + "}"
 	}
-	return filepath.Join(b.cfg.root, b.topDir("tv", anime), folder, fmt.Sprintf("Season %02d", season), base+".strm")
+	return "{tmdb-" + tmdbID + "}"
+}
+
+// releaseName is the source file's own name, kept intact so the .strm carries all
+// its quality tags; strmName just swaps the media extension for .strm.
+func releaseName(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return path.Base(u.Path)
+}
+
+func strmName(release string) string {
+	return sanitizeName(strings.TrimSuffix(release, filepath.Ext(release))) + ".strm"
 }
 
 func titleYear(title, year string) string {
@@ -828,8 +825,16 @@ type tmdbMeta struct {
 	} `json:"keywords"`
 	ExternalIDs struct {
 		ImdbID string `json:"imdb_id"`
+		TvdbID int    `json:"tvdb_id"`
 	} `json:"external_ids"`
 	ImdbID string `json:"imdb_id"` // present directly on /movie
+}
+
+func (m tmdbMeta) tvdb() string {
+	if m.ExternalIDs.TvdbID > 0 {
+		return strconv.Itoa(m.ExternalIDs.TvdbID)
+	}
+	return ""
 }
 
 // isAnime mirrors how Overseerr/Jellyseerr separate anime: the TMDB "anime"
