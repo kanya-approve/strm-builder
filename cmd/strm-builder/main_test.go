@@ -176,7 +176,7 @@ func TestBuildHTTPIndexLive(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping live network test in -short mode")
 	}
-	const base = "https://download.blender.org/peach/bigbuckbunny_movies"
+	const base = "https://archive.org/download/BigBuckBunny_124/Content"
 
 	client := &http.Client{Timeout: 20 * time.Second}
 	if resp, err := client.Get(base + "/"); err != nil {
@@ -200,12 +200,12 @@ func TestBuildHTTPIndexLive(t *testing.T) {
 		t.Fatalf("kind = %v, want HTTP autoindex", cfg.sources[0].kind)
 	}
 
-	want := filepath.Join(out, "download.blender.org", "peach", "bigbuckbunny_movies", "BigBuckBunny_320x180.strm")
+	want := filepath.Join(out, "archive.org", "download", "BigBuckBunny_124", "Content", "big_buck_bunny_720p_surround.strm")
 	got, err := os.ReadFile(want)
 	if err != nil {
 		t.Fatalf("expected .strm at %s: %v", want, err)
 	}
-	if exp := base + "/BigBuckBunny_320x180.mp4\n"; string(got) != exp {
+	if exp := base + "/big_buck_bunny_720p_surround.mp4\n"; string(got) != exp {
 		t.Fatalf("content = %q, want %q", got, exp)
 	}
 }
