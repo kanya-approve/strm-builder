@@ -2,8 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestStreamSizeAndResolution(t *testing.T) {
@@ -122,6 +126,33 @@ func TestIsAnime(t *testing.T) {
 	if west.isAnime() {
 		t.Error("English animation should not classify as anime")
 	}
+}
+
+func TestMarkAvailable(t *testing.T) {
+	var availablePath, sentKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sentKey = r.Header.Get("X-Api-Key")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/request/42":
+			io.WriteString(w, `{"media":{"id":99}}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/media/99/available":
+			availablePath = r.URL.Path
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	b := &bridge{cfg: &serveConfig{seerrURL: srv.URL, seerrKey: "secret", timeout: 5 * time.Second}, client: srv.Client()}
+	b.markAvailable("42")
+	if sentKey != "secret" {
+		t.Errorf("X-Api-Key = %q", sentKey)
+	}
+	if availablePath != "/api/v1/media/99/available" {
+		t.Fatalf("available not called; got %q", availablePath)
+	}
+
+	(&bridge{cfg: &serveConfig{}, client: srv.Client()}).markAvailable("42")
 }
 
 func TestBaseID(t *testing.T) {

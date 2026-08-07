@@ -15,6 +15,7 @@ package main
 // TMDB API key is required - the same one the Seerr instance already uses.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -46,6 +47,8 @@ type serveConfig struct {
 	target         string // plex | jellyfin | emby | kodi (layout preset)
 	listen         string // HTTP listen address
 	tmdbKey        string // TMDB v3 API key
+	seerrURL       string // Overseerr/Jellyseerr base URL (empty disables the callback)
+	seerrKey       string // Overseerr/Jellyseerr API key
 	versions       int    // how many versions (by size) to keep per item
 	pick           string // "largest" or "smallest" - which single version to keep
 	sample         int    // addon calls to union before ranking
@@ -73,6 +76,8 @@ func loadServeConfig(args []string) (*serveConfig, error) {
 	target := fs.String("target", getenv("TARGET", "plex"), "layout preset: plex, jellyfin, emby, or kodi")
 	listen := fs.String("listen", getenv("LISTEN_ADDR", ":8080"), "HTTP listen address for the webhook")
 	tmdb := fs.String("tmdb-key", getenv("TMDB_API_KEY", ""), "TMDB v3 API key (required)")
+	seerrURL := fs.String("seerr-url", getenv("SEERR_URL", ""), "Overseerr/Jellyseerr base URL, to mark requests available after fulfilling")
+	seerrKey := fs.String("seerr-api-key", getenv("SEERR_API_KEY", ""), "Overseerr/Jellyseerr API key")
 	versions := fs.Int("versions", getint("VERSIONS", 1), "how many versions (largest first) to keep per item as separate .strm files")
 	pick := fs.String("pick", getenv("PICK", "largest"), "which single version to keep: largest or smallest")
 	sample := fs.Int("sample", getint("SAMPLE", 1), "addon calls to union before ranking (it returns a random subset per call; raise for -versions >1)")
@@ -128,6 +133,8 @@ func loadServeConfig(args []string) (*serveConfig, error) {
 		target:         *target,
 		listen:         *listen,
 		tmdbKey:        strings.TrimSpace(*tmdb),
+		seerrURL:       strings.TrimRight(strings.TrimSpace(*seerrURL), "/"),
+		seerrKey:       strings.TrimSpace(*seerrKey),
 		versions:       *versions,
 		pick:           *pick,
 		sample:         *sample,
@@ -207,6 +214,9 @@ type seerrHook struct {
 		MediaType string `json:"media_type"`
 		TmdbID    flexID `json:"tmdbId"`
 	} `json:"media"`
+	Request struct {
+		RequestID flexID `json:"request_id"`
+	} `json:"request"`
 	Extra []struct {
 		Name  string `json:"name"`
 		Value string `json:"value"`
@@ -219,6 +229,7 @@ type fulfillReq struct {
 	seasons   []int  // empty = all regular seasons (tv only)
 	episode   int    // set with a single season for a one-episode direct-url write
 	url       string // if set, written verbatim instead of resolving via the addon
+	requestID string // Seerr request id, to mark it available on completion
 }
 
 func (b *bridge) authOK(r *http.Request) bool {
@@ -281,7 +292,12 @@ func hookToReq(h seerrHook) (fulfillReq, error) {
 	if string(h.Media.TmdbID) == "" {
 		return fulfillReq{}, errors.New("missing tmdbId")
 	}
-	return fulfillReq{mediaType: mt, tmdbID: string(h.Media.TmdbID), seasons: parseSeasons(h.Extra)}, nil
+	return fulfillReq{
+		mediaType: mt,
+		tmdbID:    string(h.Media.TmdbID),
+		seasons:   parseSeasons(h.Extra),
+		requestID: string(h.Request.RequestID),
+	}, nil
 }
 
 var digitsRE = regexp.MustCompile(`\d+`)
@@ -361,6 +377,69 @@ func (b *bridge) fulfill(req fulfillReq) {
 	}
 	slog.Info("fulfilled", "key", key, "written", written, "missing", missing,
 		"took", time.Since(start).Round(time.Millisecond).String())
+
+	if written > 0 && req.requestID != "" {
+		b.markAvailable(req.requestID)
+	}
+}
+
+func (b *bridge) markAvailable(requestID string) {
+	if b.cfg.seerrURL == "" || b.cfg.seerrKey == "" {
+		return
+	}
+	var reqInfo struct {
+		Media struct {
+			ID int `json:"id"`
+		} `json:"media"`
+	}
+	if err := b.seerrDo(http.MethodGet, "/api/v1/request/"+requestID, nil, &reqInfo); err != nil {
+		slog.Warn("seerr: request lookup failed", "request", requestID, "err", err)
+		return
+	}
+	if reqInfo.Media.ID == 0 {
+		slog.Warn("seerr: no media id for request", "request", requestID)
+		return
+	}
+	if err := b.seerrDo(http.MethodPost, fmt.Sprintf("/api/v1/media/%d/available", reqInfo.Media.ID), map[string]bool{"is4k": false}, nil); err != nil {
+		slog.Warn("seerr: mark available failed", "media", reqInfo.Media.ID, "err", err)
+		return
+	}
+	slog.Info("seerr: marked available", "request", requestID, "media", reqInfo.Media.ID)
+}
+
+func (b *bridge) seerrDo(method, path string, body, out any) error {
+	var rdr io.Reader
+	if body != nil {
+		buf, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		rdr = bytes.NewReader(buf)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), b.cfg.timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, b.cfg.seerrURL+path, rdr)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Api-Key", b.cfg.seerrKey)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+		return fmt.Errorf("status %s", resp.Status)
+	}
+	if out != nil {
+		return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
+	}
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	return nil
 }
 
 func (b *bridge) fulfillMovie(req fulfillReq) (written, missing int64) {

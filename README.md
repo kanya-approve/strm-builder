@@ -150,10 +150,18 @@ Approved* (set the Authorization header to your `-webhook-secret` if you use one
 Approvals then fulfil into the library your Plex/Jellyfin points at. Test without
 Seerr via `GET /fulfill?type=movie&tmdb=278` or `?type=tv&tmdb=1396&season=1`.
 
+Because fulfilment bypasses Sonarr/Radarr, Seerr never sees the request complete.
+Set `-seerr-url` and `-seerr-api-key` and, after writing the `.strm`, the bridge
+calls Seerr back to mark the request **Available** (`POST /media/{id}/available`),
+closing the loop. Left unset, it just writes files and Seerr relies on its own
+library scan.
+
 | Flag / Env | Default | Description |
 |------------|---------|-------------|
 | `-addon` / `STREMIO_ADDON` | — (required) | Stremio addon URL (its `manifest.json`, or the base) |
 | `-tmdb-key` / `TMDB_API_KEY` | — (required) | TMDB v3 API key, for titles/years and episode lists |
+| `-seerr-url` / `SEERR_URL` | — | Overseerr/Jellyseerr base URL; set with the API key to mark requests available |
+| `-seerr-api-key` / `SEERR_API_KEY` | — | Overseerr/Jellyseerr API key |
 | `-target` / `TARGET` | `plex` | Layout preset: `plex`, `jellyfin`, `emby`, `kodi` |
 | `-anime` / `ANIME_SPLIT` | `true` | Route anime (TMDB `anime` keyword) into its own top folders |
 | `-anime-folder` / `ANIME_FOLDER` | `Anime` | Folder for anime series |
