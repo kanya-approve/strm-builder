@@ -370,18 +370,34 @@ func (b *bridge) fulfill(req fulfillReq) {
 
 	var written, missing int64
 	status := "available"
+	found := false
 	start := time.Now()
 	if req.mediaType == "movie" {
-		written, missing = b.fulfillMovie(req)
+		written, missing, found = b.fulfillMovie(req)
 	} else {
-		written, missing, status = b.fulfillSeries(req)
+		written, missing, status, found = b.fulfillSeries(req)
 	}
-	slog.Info("fulfilled", "key", key, "written", written, "missing", missing, "status", status,
+	slog.Info("fulfilled", "key", key, "written", written, "missing", missing, "status", status, "found", found,
 		"took", time.Since(start).Round(time.Millisecond).String())
 
-	if written > 0 && req.requestID != "" {
-		b.updateSeerr(req.requestID, status)
+	if req.requestID != "" {
+		if found {
+			b.updateSeerr(req.requestID, status)
+		} else {
+			b.failSeerr(req.requestID)
+		}
 	}
+}
+
+func (b *bridge) failSeerr(requestID string) {
+	if b.cfg.seerrURL == "" || b.cfg.seerrKey == "" {
+		return
+	}
+	if err := b.seerrDo(http.MethodPost, "/api/v1/request/"+requestID+"/decline", nil, nil); err != nil {
+		slog.Warn("seerr: decline failed", "request", requestID, "err", err)
+		return
+	}
+	slog.Info("seerr: declined; no stream found", "request", requestID)
 }
 
 func (b *bridge) updateSeerr(requestID, status string) {
@@ -444,27 +460,27 @@ func (b *bridge) seerrDo(method, path string, body, out any) error {
 	return nil
 }
 
-func (b *bridge) fulfillMovie(req fulfillReq) (written, missing int64) {
+func (b *bridge) fulfillMovie(req fulfillReq) (written, missing int64, found bool) {
 	meta, err := b.tmdbMovie(req.tmdbID)
 	if err != nil {
 		slog.Warn("tmdb movie lookup failed", "tmdb", req.tmdbID, "err", err)
-		return 0, 1
+		return 0, 1, false
 	}
 	anime := meta.isAnime()
 
 	if req.url != "" {
 		out := b.moviePath(meta.title(), meta.year(), req.tmdbID, releaseName(req.url), anime)
 		if b.writeStrm(out, req.url) {
-			return 1, 0
+			return 1, 0, true
 		}
-		return 0, 0
+		return 0, 0, true
 	}
 
 	id := b.baseID(req.tmdbID, meta.ImdbID)
 	cands, err := b.resolveStreams("movie", id)
 	if err != nil || len(cands) == 0 {
 		slog.Warn("no stream for movie", "title", meta.title(), "id", id, "err", err)
-		return 0, 1
+		return 0, 1, false
 	}
 	for _, p := range b.selectVersions(cands) {
 		out := b.moviePath(meta.title(), meta.year(), req.tmdbID, releaseName(p.url), anime)
@@ -472,14 +488,14 @@ func (b *bridge) fulfillMovie(req fulfillReq) (written, missing int64) {
 			written++
 		}
 	}
-	return written, 0
+	return written, 0, true
 }
 
-func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64, status string) {
+func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64, status string, found bool) {
 	meta, err := b.tmdbTV(req.tmdbID)
 	if err != nil {
 		slog.Warn("tmdb tv lookup failed", "tmdb", req.tmdbID, "err", err)
-		return 0, 1, "partial"
+		return 0, 1, "partial", false
 	}
 	anime := meta.isAnime()
 	tvdbID := meta.tvdb()
@@ -487,13 +503,13 @@ func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64, status s
 	if req.url != "" {
 		if req.episode == 0 || len(req.seasons) != 1 {
 			slog.Warn("direct url for tv needs exactly one season and an episode", "tmdb", req.tmdbID)
-			return 0, 1, "partial"
+			return 0, 1, "partial", false
 		}
 		out := b.episodePath(meta.title(), meta.year(), tvdbID, req.tmdbID, req.seasons[0], releaseName(req.url), anime)
 		if b.writeStrm(out, req.url) {
-			return 1, 0, "partial"
+			return 1, 0, "partial", true
 		}
-		return 0, 0, "partial"
+		return 0, 0, "partial", true
 	}
 
 	seasons := req.seasons
@@ -505,6 +521,7 @@ func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64, status s
 		}
 	}
 
+	var foundCount int64
 	sem := make(chan struct{}, b.cfg.concurrency)
 	var wg sync.WaitGroup
 	for _, sn := range seasons {
@@ -526,6 +543,7 @@ func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64, status s
 					atomic.AddInt64(&missing, 1)
 					return
 				}
+				atomic.AddInt64(&foundCount, 1)
 				for _, p := range b.selectVersions(cands) {
 					out := b.episodePath(meta.title(), meta.year(), tvdbID, req.tmdbID, season, releaseName(p.url), anime)
 					if b.writeStrm(out, p.url) {
@@ -547,7 +565,7 @@ func (b *bridge) fulfillSeries(req fulfillReq) (written, missing int64, status s
 	if missing == 0 && len(seasons) >= totalRegular {
 		status = "available"
 	}
-	return written, missing, status
+	return written, missing, status, foundCount > 0
 }
 
 // baseID picks the id scheme the addon accepts: tmdb: when advertised (or when we

@@ -152,10 +152,12 @@ Seerr via `GET /fulfill?type=movie&tmdb=278` or `?type=tv&tmdb=1396&season=1`.
 
 Because fulfilment bypasses Sonarr/Radarr, Seerr never sees the request complete.
 Set `-seerr-url` and `-seerr-api-key` and, after writing the `.strm`, the bridge
-calls Seerr back (`POST /media/{id}/{status}`) to close the loop: **available** for
-a movie or a fully-covered show, **partial** when only some seasons were requested
-or an episode was missing. The request's own `is4k` flag is forwarded, so it marks
-the right track. Left unset, it just writes files and Seerr relies on its own scan.
+calls Seerr back to close the loop: **available** for a movie or a fully-covered
+show, **partial** when only some seasons were requested or an episode was missing.
+The request's own `is4k` flag is forwarded so it marks the right track. When the
+addon resolves **nothing**, the request is **declined** — Seerr has no API to set a
+"failed" state, so declining is the only way to move it out of *Processing*. Left
+unset, it just writes files and Seerr relies on its own scan.
 
 | Flag / Env | Default | Description |
 |------------|---------|-------------|

@@ -160,6 +160,24 @@ func TestUpdateSeerr(t *testing.T) {
 	(&bridge{cfg: &serveConfig{}, client: srv.Client()}).updateSeerr("42", "available")
 }
 
+func TestFailSeerr(t *testing.T) {
+	var declinePath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			declinePath = r.URL.Path
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	b := &bridge{cfg: &serveConfig{seerrURL: srv.URL, seerrKey: "secret", timeout: 5 * time.Second}, client: srv.Client()}
+	b.failSeerr("42")
+	if declinePath != "/api/v1/request/42/decline" {
+		t.Fatalf("decline not called; got %q", declinePath)
+	}
+}
+
 func TestBaseID(t *testing.T) {
 	tmdbAddon := &bridge{manifest: addonManifest{IDPrefixes: []string{"tmdb:", "tt"}}}
 	if got := tmdbAddon.baseID("278", "tt0111161"); got != "tmdb:278" {
